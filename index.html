@@ -1,6 +1,461 @@
-<html>
-<head> </head>
+<!---
+	Course Name: CS416 Data Visualization
+	Name: Poombavai Thirugnanasambandam
+	Previous Project link: https://public.tableau.com/app/profile/tpoombavai/viz/UnitedStatesCancerStats-2013/Dashboard1
+
+	References:
+	[1] Cheprasov, Alexander. "json-colors", https://github.com/cheprasov/json-colors/blob/master/colors.json
+	[2] Kelleher, C. "Bar chart", http://curran.github.io/screencasts/introToD3/examples/viewer/#/104
+	[3] Kelleher, C. "Introduction to D3", https://www.youtube.com/watch?v=8jvoTV54nXw
+	[4] Bostock, Mike. "Legend - Modified Legend Code from Mike Bostock", http://bl.ocks.org/mbostock/3888852
+	[5] Bostock, Mike. "USA Map", http://bl.ocks.org/michellechandra/0b2ce4923dc9b5809922
+	[6] Bostock, Mike. "List of US States with polygon co-ordinates", http://bl.ocks.org/michellechandra/raw/0b2ce4923dc9b5809922/a476b9098ba0244718b496697c5b350460d32f99/us-states.json
+	[7] Kafura, Dennis. "Cancer Data 2013", https://corgis-edu.github.io/corgis/csv/cancer/
+	[8] Kelleher, C. "Stacked & Grouped Bar Charts", https://www.youtube.com/watch?v=6Xynj_pBybc
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="https://d3js.org/d3.v3.min.js"></script>
+<style type="text/css">
+
+/* On mouse hover, lighten state color */
+path:hover {
+	fill-opacity: .7;
+}
+
+/* Style for Custom Tooltip */
+div.tooltip {   
+ 	position: absolute;           
+	text-align: center;   
+	white-space: pre-line;        
+	width: 200px;                  
+	height: 50px;                 
+	padding: 2px;             
+	font: 12px sans-serif;        
+	background: white;   
+	border: 0px;      
+	border-radius: 8px;           
+	pointer-events: none;         
+}
+        
+/* Legend Font Style */
+body {
+	font: 11px sans-serif;
+}
+        
+/* Legend Position Style */
+.legend {
+	position:relative;
+	left:40px;
+	top:0px;
+	float:right;
+}
+
+.axis path, .axis line {
+        fill: none;
+        stroke: #000;
+        shape-rendering: crispEdges;
+}
+.y.axis path, .y.axis line {
+        stroke: none;
+	  }
+
+</style>
+</head>
 <body>
-<h2> CS416 Data Visualization - Final Project - United States Cancer Stats for 2013 </h2>
+	<h2> CS416 Data Visualization - Final Project - United States Cancer Statistics for 2013 </h2>
+	<div style="display: table;" >
+		<div style="display: table-row">
+			
+			<div style="width: 700px; display: table-cell;" id="mapDivision">
+				<h2>Population by State</h2>
+				<h4>Click on each state to view see detailed break down by cancer types and impacted population</h4>
+			</div>
+			<div style="display: table-cell;" id="barDivision">
+				<h2>Cancer Impacted Population</h2>
+			</div>
+		</div>
+		<div style="display: table-row; margin-left:auto;margin-right:auto;">
+			<div style="display: table-cell; " id="stackedBarDivision">
+			<h2>Impacted Population By Cancer Type</h2>
+			</div>
+		</div>
+	</div>
+<script type="text/javascript">
+var statesData; // all states data of USA
+var colorsData; // all colors data
+var cancerData; // All cancer stats data
+var statesIndex = {}; // used to construct the map of state coordinates polygon data
+var colorIndex = {}; // used to construct the map of color data by state
+var cancerIndex = {}; // used to construct the map of cancer data by state
+var cancerTypes = ["Breast Cancer", "Lung Cancer", "Colorectal Cancer"];
+ 
+d3.json("us-states.json", function(json) {
+	statesData = json;
+	d3.json("colors.json", function(colorJson) {
+		colorsData = colorJson;
+		d3.csv("cancer.csv", function(csv) {
+			cancerData = csv;
+			for (var j = 0; j < json.features.length; j++)  {
+				var jsonState = json.features[j].properties.name;
+				statesIndex[jsonState] = j;
+				colorIndex[jsonState] = j;
+				for (var c = 0; c <cancerData.length ; c++){
+					if (cancerData[c].State === jsonState){
+						cancerIndex[jsonState] = c;
+					}
+				}
+				
+			}
+			//load the charts
+			render();
+
+		});
+	});
+
+});
+
+/**
+ * function to render USA Map
+ */
+function createMapChart(){
+    /*  This visualization was made possible by modifying code provided by:
+        Scott Murray, Choropleth example from "Interactive Data Visualization for the Web" 
+https://github.com/alignedleft/d3-book/blob/master/chapter_12/05_choropleth.html   
+
+Malcolm Maclean, tooltips example tutorial
+http://www.d3noob.org/2013/01/adding-tooltips-to-d3js-graph.html
+
+Mike Bostock, Pie Chart Legend
+http://bl.ocks.org/mbostock/3888852  
+	*/
+
+
+    //Width and height of map
+    var width = 600;
+    var height = 400;
+
+    // D3 Projection
+    var projection = d3.geo.albersUsa()
+        .translate([width/2, height/2])    // translate to center of division
+        .scale([600]);          // scale things down so see entire US
+
+    // Define path generator
+    var path = d3.geo.path()               // path generator that will convert GeoJSON to SVG paths
+        .projection(projection);  // tell path generator to use albersUsa projection
+
+	var svg = d3.select("#mapDivision")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    // Div for tooltip
+    var div = d3.select("#mapDivision")
+        .append("div")   
+        .attr("class", "tooltip")               
+        .style("opacity", 0);
+
+    // Loop through each state data value in the .csv file
+    for (var i = 0; i < cancerData.length; i++) {
+
+        // Grab State Name
+        var dataState = cancerData[i].State;
+
+        // Assigining the impacted population
+        var dataValue = cancerData[i]["Total.Number"];
+
+        // Find the corresponding state inside the GeoJSON
+        for (var j = 0; j < statesData.features.length; j++)  {
+            var jsonState = statesData.features[j].properties.name;
+
+            if (dataState == jsonState) {
+                let keys = Object.keys(cancerData[i]);
+                // Copy the data value into the JSON
+                keys.map(function(d, i){
+                    if(d!="State"){
+                        statesData.features[j].properties[d] = cancerData[i][d];
+                    } 
+                });
+                break;
+            }
+        }
+
+    }
+
+	svg.selectAll("path")
+        .data(statesData.features)
+        .enter()
+        .append("path")
+        .attr("d", path)
+        .on("mouseover", function(d) {      
+            div.transition()        
+                .duration(10)      
+                .style("opacity", .9);      
+            div.text("State : " + d.properties.name + 
+                        "\n Total Population: " + d.properties.TotalPopulation +
+                        "\n Impacted Population: " + d.properties.ImpactedPopulation)
+                .style("left", (d3.event.pageX) + "px")     
+                .style("top", (d3.event.pageY - 28) + "px");    
+        }) 
+		.on("click", function(d){ 
+			/* *
+			 * Triggering charts to display just for selected state
+			 * Updating all other scenes on the document
+			 */
+			barChart(cancerData, d.properties.name); // update bar chart
+			stackedBar(transformData(cancerData), d.properties.name); // update stacked bar
+		})
+		.style("stroke", "#fff")
+		.style("stroke-width", "1")
+		.style("fill", function(d,i) {
+			return colorsData[i].hex;
+		});	
+}
+/**
+ * function to create and update bar chat
+ */
+function createBarChart(){
+
+	  var outerWidth = 500;
+      var outerHeight = 450;
+      var margin = { left: 130, top: 0, right: 0, bottom: 30 };
+      var barPadding = 0.6;
+
+      var xColumn = "ImpactedPopulation";
+      var yColumn = "State";
+
+      var innerWidth  = outerWidth  - margin.left - margin.right;
+      var innerHeight = outerHeight - margin.top  - margin.bottom;
+
+      var svg = d3.select("#barDivision").append("svg")
+        .attr("width",  outerWidth)
+        .attr("height", outerHeight);
+      var g = svg.append("g")
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+      var xAxisG = g.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0," + innerHeight + ")");
+		g.selectAll("text")
+      var yAxisG = g.append("g")
+        .attr("class", "y axis");
+
+      var xScale = d3.scale.linear().range(      [0, innerWidth]);
+      var yScale = d3.scale.ordinal().rangeBands([0, innerHeight], barPadding);
+
+      var xAxis = d3.svg.axis().scale(xScale).orient("bottom")
+        .ticks(5)                   // Use approximately 5 ticks marks.
+        .tickFormat(d3.format("s")) // Use intelligent abbreviations, e.g. 5M for 5 Million
+        .outerTickSize(0);          // Turn off the marks at the end of the axis.
+      var yAxis = d3.svg.axis().scale(yScale).orient("left")
+        .outerTickSize(0);          // Turn off the marks at the end of the axis.
+
+      var update = function(data, name){
+		var index = name == "all" ? -1: cancerIndex[name];
+        xScale.domain([0, d3.max(data, function (d){ return parseInt(d[xColumn]); })]);
+        // filter the data based on parameter of scene
+		/*data = data.filter(function(x){ 
+			if(index == -1){
+				return true;
+			} else if (index >=0) {
+				if(x.State == name){
+					return true;
+				} else {
+					return false;
+				}
+			}
+		 });
+		 */
+		yScale.domain(data.map(function (d){ return d[yColumn]; }));
+
+        xAxisG.call(xAxis);
+        yAxisG.call(yAxis);
+
+		var bars;
+		if(index == -1){
+			// select all states data 
+			bars = g.selectAll("rect").data(data);
+		} else {
+			// select selected state data by trigger
+			bars = g.selectAll("rect").data([data[index]]);
+		}
+
+        bars.enter().append("rect")
+          .attr("height", yScale.rangeBand());
+        bars
+          .attr("x", 0)
+          .attr("y",     function (d){ return yScale(d[yColumn]); })
+          .attr("width", function (d){ return xScale(parseInt(d[xColumn])); })
+		  .attr("fill", function(d,i) {
+			// use colorIndex for selection
+			if(index == -1){
+				return colorsData[i].hex;
+			} else {
+				return colorsData[colorIndex[name]].hex;
+			}
+			
+		  })
+        bars.exit().remove();
+        
+      }
+	  return update;
+
+}
+/**
+ * function to create and update stacked bar chat
+ */
+function createSbarChart(){
+	  var outerWidth = 700;
+      var outerHeight = 450;
+      var margin = { left: 90, top: 30, right: 30, bottom: 40 };
+      var barPadding = 0.2;
+
+      var xColumn = "State";
+      var yColumn = "count";
+      var colorColumn = "CancerType";
+      var layerColumn = colorColumn;
+
+      var innerWidth  = outerWidth  - margin.left - margin.right;
+      var innerHeight = outerHeight - margin.top  - margin.bottom;
+
+      var svg = d3.select("#stackedBarDivision").append("svg")
+        .attr("width",  outerWidth)
+        .attr("height", outerHeight);
+      var g = svg.append("g")
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+      var xAxisG = g.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0," + innerHeight + ")");
+      var yAxisG = g.append("g")
+        .attr("class", "y axis");
+
+      var xScale = d3.scale.ordinal().rangeBands([0, innerWidth], barPadding);
+      var yScale = d3.scale.linear().range([innerHeight, 0]);
+
+      // Use a modified SI formatter that uses "B" for Billion.
+      var siFormat = d3.format("s");
+      var customTickFormat = function (d){
+        return siFormat(d).replace("G", "B");
+      };
+
+      var xAxis = d3.svg.axis().scale(xScale).orient("bottom")
+        .outerTickSize(0);
+      var yAxis = d3.svg.axis().scale(yScale).orient("left")
+        .ticks(10)
+        .tickFormat(customTickFormat)
+        .outerTickSize(0);
+
+	  var color = d3.scale.linear()
+        .range(["rgb(255, 191, 0)", "rgb(211, 33, 45)","rgb(44, 160, 44)"]);
+
+   	  color.domain([0,1,2]); // setting the range of the input data
+
+	  // Modified Legend Code from Mike Bostock: http://bl.ocks.org/mbostock/3888852
+	  // Add legend for the stack bar chart
+		var legend = d3.select("#stackedBarDivision").append("svg")
+        .attr("class", "legend")
+        .attr("width", 140)
+        .attr("height", 200)
+        .selectAll("g")
+        .data(color.domain().slice())
+        .enter()
+        .append("g")
+        .attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; });
+
+    	legend.append("rect")
+        .attr("width", 18)
+        .attr("height", 18)
+        .style("fill", color);
+
+    	legend.append("text")
+        .data(cancerTypes)
+        .attr("x", 24)
+        .attr("y", 9)
+        .attr("dy", ".35em")
+        .text(function(d) { return d; });
+
+      var update = function(data, name){
+		var index = name == "all" ? -1: cancerIndex[name];
+		var nested; 
+		if(index == -1){
+			// select all states
+		nested = d3.nest()
+          .key(function (d){ return d[layerColumn]; })
+          .entries(data)
+		} else {
+			// select the state based on trigger
+			nested = d3.nest()
+          .key(function (d){ return d[layerColumn]; })
+          .entries(data.filter(function(d){
+			if( d.State == name){
+				return true;
+			} else return false;
+		  }))
+		}
+
+        var stack = d3.layout.stack()
+          .y(function (d){ return parseInt(d[yColumn]); })
+          .values(function (d){ return d.values; });
+
+        var layers = stack(nested);
+        xScale.domain(layers[0].values.map(function (d){
+          return d[xColumn];
+        }));
+
+        yScale.domain([
+          0,
+          d3.max(layers, function (layer){
+            return d3.max(layer.values, function (d){
+              return d.y0 + d.y;
+            });
+          })
+        ]);
+
+        xAxisG.call(xAxis);
+        yAxisG.call(yAxis);
+
+        var layers = g.selectAll(".layer").data(layers);
+        layers.enter().append("g").attr("class", "layer");
+        layers.exit().remove();
+        layers.style("fill", function (d){
+          return color(cancerTypes.findIndex(function(x){
+			return x == d.key;
+		  }));
+        });
+
+        var bars = layers.selectAll("rect").data(function (d){
+          return d.values;
+        });
+        bars.enter().append("rect")
+        bars.exit().remove();
+        bars
+          .attr("x", function (d){ return xScale(d[xColumn]); })
+          .attr("y", function (d){ return yScale(d.y0 + d.y); })
+          .attr("width", xScale.rangeBand())
+          .attr("height", function (d){ return innerHeight - yScale(d.y); })
+      }
+	  return update;
+}
+
+function transformData (data){
+	var result = [];
+	data.map(function(d){
+		var cancerTypeData =["BreastCancer","LungCancer","ColorectalCancer"];
+		for(i = 0;i<cancerTypes.length; i++){
+			result.push({"State":d.State, "CancerType":cancerTypes[i], count:d[cancerTypeData[i]]});
+		}
+	});
+	return result;
+}
+
+function render(){
+	createMapChart();
+	barChart = createBarChart();
+	barChart(cancerData, "all");
+	stackedBar = createSbarChart();
+	stackedBar(transformData(cancerData), "all");
+}
+</script>
 </body>
 </html>
